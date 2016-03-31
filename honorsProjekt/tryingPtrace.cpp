@@ -96,8 +96,8 @@ int main( int argc, char* argv[] ) {
 		int brkpt_pos = 0;
 		
 		// need array of breakpoint addresses --- might not be in order
-		void* addr = ( void* )0x000000000040070d;				// fix to be main
-		void* sec_addr = ( void* )0x0000000000400775;			// before malloc
+		void* addr = ( void* )0x00000000004006c4;				// fix to be main
+		void* sec_addr = ( void* )0x000000000040072c;			// before malloc
 		
 		waitpid( parent, &status, 0 );
 		orig_rax = ptrace( PTRACE_PEEKUSER, parent, 8 * ORIG_RAX, NULL );
@@ -165,3 +165,4 @@ int main( int argc, char* argv[] ) {
 	
 	return 0;
 }
+

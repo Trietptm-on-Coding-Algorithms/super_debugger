@@ -16,10 +16,13 @@ struct errors {
   vector< tuple<string, string, int> > description;
 };
 
-vector<string> memory;
-vector<errors> totalErrors;
 tuple<string, string, int> desLines;
+
+// important
 vector<errors> dividedErrors[9];
+vector<errors> totalErrors;
+vector<string> memory;
+
 
 string listOfErrors[] = {"Segfault", "Invalid Read", "Invalid Write", "Invalid Free", "Mismatched Free ~ Always use malloc with free and new with delete", "Source and Destination Overwrite Each Other", "Conditional Jump", "A System Call Parameter is Uninitialised", "Your Function is Uninitialized, Value Might Be Too Big or Negative"}; 
 
@@ -221,69 +224,67 @@ void examine() {
 }
 
 void handleNows() {
-  if (dividedErrors[5].size() + dividedErrors[7].size() + dividedErrors[8].size()) {
-    cout << "\n----------------------------------------------------------------------------------\n----------------------------------------------------------------------------------\n\n";
+  cout << "\n----------------------------------------------------------------------------------\n----------------------------------------------------------------------------------\n\n";
 
-    cout << "\t\e[1m***\tFix these errors before continuing   ***\n\t***\tIf you want to force continue your program:   ***\n\t***\trerun with the -f or -force flag eg ./debug -f ./yourProgram   ***\e[0m\n\n";
+  cout << "\t\e[1m***\tFix these errors before continuing   ***\n\t***\tIf you want to force continue your program:   ***\n\t***\trerun with -f or --force flag eg ./debug -f ./yourProgram   ***\e[0m\n\n";
 
-    cout << "----------------------------------------------------------------------------------\n----------------------------------------------------------------------------------\n\n";
+  cout << "----------------------------------------------------------------------------------\n----------------------------------------------------------------------------------\n\n";
 
-    if (dividedErrors[5].size()) {
-      for (int i = 0; i < dividedErrors[5].size(); ++i) {
-        string err = dividedErrors[5][i].errorMessage;
-        string s = err.substr(34, err.find("(") - 34);
-        cout << "The source and destination of the function: \e[1m\e[4m" << s << "\e[0m\e[0m overlap\n"; 
-        vector< tuple<string, string, int> > errDescript = dividedErrors[5][i].description;
+  if (dividedErrors[5].size()) {
+    for (int i = 0; i < dividedErrors[5].size(); ++i) {
+      string err = dividedErrors[5][i].errorMessage;
+      string s = err.substr(34, err.find("(") - 34);
+      cout << "The source and destination of the function: \e[1m\e[4m" << s << "\e[0m\e[0m overlap\n"; 
+      vector< tuple<string, string, int> > errDescript = dividedErrors[5][i].description;
 
-        cout << "\tYour error is in the function: \e[1m\e[4m" << s << "\e[0m\e[0m\n";
-        for (int j = 0; j < errDescript.size(); ++j) {
-          if (get<2>(errDescript[j]) != -1) {
-            cout << "\tThis is on line: \e[1m\e[4m" << get<2>(errDescript[j]) << "\e[0m\e[0m, of the file: \e[1m\e[4m" << get<1>(errDescript[j]) << "\e[0m\e[0m, in: \e[1m\e[4m" << get<0>(errDescript[j]) << "\e[0m\e[0m\n\n\n";
-            break;
-          }
+      cout << "\tYour error is in the function: \e[1m\e[4m" << s << "\e[0m\e[0m\n";
+      for (int j = 0; j < errDescript.size(); ++j) {
+        if (get<2>(errDescript[j]) != -1) {
+          cout << "\tThis is on line: \e[1m\e[4m" << get<2>(errDescript[j]) << "\e[0m\e[0m, of the file: \e[1m\e[4m" << get<1>(errDescript[j]) << "\e[0m\e[0m, in: \e[1m\e[4m" << get<0>(errDescript[j]) << "\e[0m\e[0m\n\n\n";
+          break;
         }
       }
     }
+  }
 
-    if (dividedErrors[7].size()) {
-      for (int i = 0; i < dividedErrors[7].size(); ++i) {
-        string err = dividedErrors[7][i].errorMessage;
-        string s = err.substr(14, err.find("points to uni") - 15);
-        cout << "Parameter(s) to the system call of the function: \e[1m\e[4m" << s << "\e[0m\e[0m are not initialized\n"; 
-        vector< tuple<string, string, int> > errDescript = dividedErrors[7][i].description;
+  if (dividedErrors[7].size()) {
+    for (int i = 0; i < dividedErrors[7].size(); ++i) {
+      string err = dividedErrors[7][i].errorMessage;
+      string s = err.substr(14, err.find("points to uni") - 15);
+      cout << "Parameter(s) to the system call of the function: \e[1m\e[4m" << s << "\e[0m\e[0m are not initialized\n"; 
+      vector< tuple<string, string, int> > errDescript = dividedErrors[7][i].description;
 
-        int count = 0;				
-        cout << "\tYour error is in the function: \e[1m\e[4m" << s << "\e[0m\e[0m\n";	
-        for (int j = 0; j < errDescript.size(); ++j) {
-          if (count == 1 && get<2>(errDescript[j]) != -1) {
-            cout << "\n\tYou declared your parameter on line: \e[1m\e[4m" << get<2>(errDescript[j]) << "\e[0m\e[0m, of the file: \e[1m\e[4m" << get<1>(errDescript[j]) << "\e[0m\e[0m, in: \e[1m\e[4m" << get<0>(errDescript[j]) << "\e[0m\e[0m"; 
-            break;
-          }
-
-          if (get<2>(errDescript[j]) != -1) {
-            cout << "\tThis is on line: \e[1m\e[4m" << get<2>(errDescript[j]) << "\e[0m\e[0m, of the file: \e[1m\e[4m" << get<1>(errDescript[j]) << "\e[0m\e[0m, in: \e[1m\e[4m" << get<0>(errDescript[j]) << "\e[0m\e[0m";
-            ++count;
-          }
+      int count = 0;				
+      cout << "\tYour error is in the function: \e[1m\e[4m" << s << "\e[0m\e[0m\n";	
+      for (int j = 0; j < errDescript.size(); ++j) {
+        if (count == 1 && get<2>(errDescript[j]) != -1) {
+          cout << "\n\tYou declared your parameter on line: \e[1m\e[4m" << get<2>(errDescript[j]) << "\e[0m\e[0m, of the file: \e[1m\e[4m" << get<1>(errDescript[j]) << "\e[0m\e[0m, in: \e[1m\e[4m" << get<0>(errDescript[j]) << "\e[0m\e[0m"; 
+          break;
         }
 
-        cout << "\n\n\n";
+        if (get<2>(errDescript[j]) != -1) {
+          cout << "\tThis is on line: \e[1m\e[4m" << get<2>(errDescript[j]) << "\e[0m\e[0m, of the file: \e[1m\e[4m" << get<1>(errDescript[j]) << "\e[0m\e[0m, in: \e[1m\e[4m" << get<0>(errDescript[j]) << "\e[0m\e[0m";
+          ++count;
+        }
       }
+
+      cout << "\n\n\n";
     }
+  }
 
-    if (dividedErrors[8].size()) {
-      for (int i = 0; i < dividedErrors[8].size(); ++i) {
-        string err = dividedErrors[8][i].errorMessage;
-        string s = err.substr(28, err.find("has a fishy") - 29);
-        string val = err.substr(err.find(":") + 2);
-        cout << "The value you passed into the function: \e[1m\e[4m" << s << "\e[0m\e[0m is too big or negative\nThe value \e[1m\e[4m" << s << "\e[0m\e[0m recieved is " << val << "\n"; 
-        vector< tuple<string, string, int> > errDescript = dividedErrors[8][i].description;
+  if (dividedErrors[8].size()) {
+    for (int i = 0; i < dividedErrors[8].size(); ++i) {
+      string err = dividedErrors[8][i].errorMessage;
+      string s = err.substr(28, err.find("has a fishy") - 29);
+      string val = err.substr(err.find(":") + 2);
+      cout << "The value you passed into the function: \e[1m\e[4m" << s << "\e[0m\e[0m is too big or negative\nThe value \e[1m\e[4m" << s << "\e[0m\e[0m recieved is " << val << "\n"; 
+      vector< tuple<string, string, int> > errDescript = dividedErrors[8][i].description;
 
-        cout << "\tYour error is in the function: \e[1m\e[4m" << s << "\e[0m\e[0m\n";
-        for (int j = 0; j < errDescript.size(); ++j) {
-          if (get<2>(errDescript[j]) != -1) {
-            cout << "\tThis is on line: \e[1m\e[4m" << get<2>(errDescript[j]) << "\e[0m\e[0m, of the file: \e[1m\e[4m" << get<1>(errDescript[j]) << "\e[0m\e[0m, in: \e[1m\e[4m" << get<0>(errDescript[j]) << "\e[0m\e[0m\n\n";
-            break;
-          }
+      cout << "\tYour error is in the function: \e[1m\e[4m" << s << "\e[0m\e[0m\n";
+      for (int j = 0; j < errDescript.size(); ++j) {
+        if (get<2>(errDescript[j]) != -1) {
+          cout << "\tThis is on line: \e[1m\e[4m" << get<2>(errDescript[j]) << "\e[0m\e[0m, of the file: \e[1m\e[4m" << get<1>(errDescript[j]) << "\e[0m\e[0m, in: \e[1m\e[4m" << get<0>(errDescript[j]) << "\e[0m\e[0m\n\n";
+          break;
         }
       }
     }
@@ -294,14 +295,14 @@ int execValgrind(int argc, char* argv[]) {
   int readMe[2];
 
   if (pipe(readMe) == -1) {
-    cerr << "Creational of pipe for valgrind failed\n";
+    cerr << "\n\t\e[1mCreational of pipe for valgrind failed\e[0m\n\n";
     return 1;	
   }
 
   pid_t parent = fork();
 
   if (parent == -1) {
-    cerr << "Forking failed for valgrind process\n";
+    cerr << "\n\t\e[1mForking failed for valgrind process\e[0m\n\n";
     return 1;
   }
 
@@ -310,10 +311,10 @@ int execValgrind(int argc, char* argv[]) {
     close(readMe[1]);								// parent does not write
 
     int status;
-    int k = waitpid(parent, &status, 0);
+    int k = waitpid(parent, &status, 0);				// might need to check exit status
 
     if (k == -1) {
-      cerr << "Child process for valgrind failed\n";
+      cerr << "\n\t\e[1mChild process for valgrind failed\e[0m\n\n";
       return 1;
     }
  
@@ -332,7 +333,17 @@ int execValgrind(int argc, char* argv[]) {
 			temp += str[i];
 			
 		if (!temp.find("valgrind: ")) {
-			cout << "\n\t\e[1m" << &str[10] << "\e[0m\n";
+			string output;
+			for (int i = 10; i < strlen(str); ++i) {
+				if (str[i] != '\n')
+					output += str[i];
+				else {
+					output += str[i];
+					break;
+				}
+			}
+			
+			cout << "\n\t\e[1m" << output << "\e[0m\n";
 			return 1;
 		}
 
@@ -344,22 +355,23 @@ int execValgrind(int argc, char* argv[]) {
     examine();
 
     int flag = 1;
-    if ((!strcmp(argv[1], "-f")) || (!strcmp(argv[1], "-force")))
+    if ((!strcmp(argv[1], "-f")) || (!strcmp(argv[1], "--force")))
       flag = 0;
 
     // check if any handle-nows are happening --- these should also be top priority 
     // these errors might lead to further errors later on
-    if (flag) {
-      handleNows();
-      return 2;
-    }		
+    if (dividedErrors[5].size() + dividedErrors[7].size() + dividedErrors[8].size())
+		  if (flag) {
+		    handleNows();
+		    return 2;
+		  }		
   }
   else {
     close(readMe[0]);							// child does not read
     dup2(readMe[1], 2);						// redirect stderr	
 
     int m = 1;
-    if ((!strcmp(argv[1], "-f")) || (!strcmp(argv[1], "-force")))
+    if ((!strcmp(argv[1], "-f")) || (!strcmp(argv[1], "--force")))
       ++m;
 
     char* valgrind_args[argc + 1];
@@ -376,7 +388,7 @@ int execValgrind(int argc, char* argv[]) {
 		close(readMe[1]);
 		
     if (k == -1) {
-    	cerr << "Execution failed for valgrind --- Make sure you have the correct object \n";
+    	cerr << "\n\t\e[1mExecution failed for valgrind --- Make sure you have the correct object\e[0m\n\n";
       return 1;
     } 
   }
