@@ -1,6 +1,7 @@
-//#include <bits/stdc++.h>
+#include <bits/stdc++.h>
 #include <unistd.h>
-#include <iostream>
+#include <string.h>
+#include <fstream>
 
 using namespace std;
 
@@ -18,6 +19,7 @@ using namespace std;
  *	nm helloworld to get symbol table
  *
  */
+ 
 
 int main() {
 	//cout << "Hello world\n";
@@ -35,9 +37,25 @@ int main() {
 	write(1, "Hello worldz\n", 14);
 	write(1, "Hi world\n", 10);
 	
-	char* string = malloc(5);
+	char* str = (char*)malloc(5);
 	
-	strcpy(string, "hello");			// should be error here
+	strcpy(str, "hello");			// should be error here
 	
+	int a = 50;
+		
+	int b = 100;
+	int retq = 100;
+/*	
+	ifstream parseMe( "/home/guiping/cs241/honorsProjekt/testers/test.c" );		// got from online - cppreference
+	
+	if ( parseMe.is_open() ) {
+		string line;
+
+		while ( getline( parseMe, line ) ) 
+			cout << line << "\n";
+
+		parseMe.close();
+	}
+*/	
 	return 0;
 }
