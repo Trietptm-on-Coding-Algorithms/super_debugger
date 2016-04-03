@@ -7,7 +7,7 @@ struct x86 {
   vector< vector<string> > assembly;
 };
 
-vector< string > objectDump;
+//vector< string > objectDump;
 vector< string > mainFunct;							// only debugging main for now
 vector< string > sourceFile;
 string filename;
@@ -75,24 +75,14 @@ void printData() {
 }
 
 
-
+/*
 int getObjDump( string file_name ) {
 	ifstream parseMe( file_name );				// got from online - cppreference
 	if ( parseMe.is_open() ) {
 		string line;
 
-		while ( getline(parseMe, line) ) {
-			if ( line.find("<main>:") != -1 ) {
-				objectDump.push_back( line );
-				break;
-			}
-		}
-		
-		while ( getline(parseMe, line) ) {
-			if ( !line.empty() )
-				objectDump.push_back( line );
-			else break;
-		}
+		while ( getline(parseMe, line) ) 
+			objectDump.push_back( line );
 
 		parseMe.close();
 	}
@@ -103,6 +93,7 @@ int getObjDump( string file_name ) {
 	
 	return 0;
 }
+*/
 
 
 /*
@@ -223,11 +214,20 @@ int execObjDump( int argc, char* argv[] ) {			// these arguments are the exact s
 	int argNum = 1;
 	if ( !strcmp(argv[1], "-f") || !strcmp(argv[1], "--force") )
 		++argNum;
-
+/*
 	string temp = argv[argNum];
 	temp = temp.substr( 2 ); 
 	temp += "_copy.asm";		
-	const char* file_name = &temp[0];				// convert to char array
+	const char* file_name = temp.c_str();				// convert to char array
+	cout << file_name << "\n";
+*/
+
+	int readMe[2];
+
+  if ( pipe(readMe) == -1 ) {
+    cerr << "\n\t\e[1mCreational of pipe for valgrind failed\e[0m\n\n";
+    return 1;	
+  }
 
 	pid_t objdump = fork();
 	
@@ -237,18 +237,23 @@ int execObjDump( int argc, char* argv[] ) {			// these arguments are the exact s
   }
 
 	if ( !objdump ) {			
-		int fd = open( file_name, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR );
-		
-		if ( dup2(fd, 1) == -1 ) {   				// make stdout go to file
+		if ( close(readMe[0]) )	{						// child does not read
+			cerr << "\n\t\e[1mCould not close file descriptor for objdump pipe\e[0m\n\n";
+			exit(1);
+		}
+	
+		if ( dup2(readMe[1], 1) == -1 ) {   				// make stdout go to file
 			cerr << "\n\t\e[1mCould not redirect stdout to our file for objdump pipe\e[0m\n\n";
 			exit( 1 );
 		}
 		
-		if ( close(fd) ) {     					// fd no longer needed - the dup'ed handles are sufficient
+		/*
+		if ( close(fd) ) {     			// fd no longer needed - the dup'ed handles are sufficient
 			cerr << "\n\t\e[1mCould not close file descriptor for objdump pipe\e[0m\n\n";
 			exit( 1 );
 		}
-		
+		*/
+
 		const char* objdump_args[5];
 		objdump_args[0] = "objdump";
 		objdump_args[1]	= "-d";
@@ -264,6 +269,36 @@ int execObjDump( int argc, char* argv[] ) {			// these arguments are the exact s
 		}
 	}
 
+	if ( close(readMe[1]) ) {								// parent does not write
+		cerr << "\n\t\e[1mCould not close file descriptor for objdump pipe\e[0m\n\n";
+		return 1;
+	}
+	
+	char str[65536];
+	memset( str, 0, 65536 );
+	//string file_contents;
+	char* file_contents = NULL;
+
+	int readpipe = 0;
+	int file_len = 0;
+	
+	do {
+		if ( readpipe == -1 ) {
+			cerr << "\n\t\e[1mCould not read from object dump pipe\e[0m\n\n";
+      return 1;
+		}
+	
+		usleep( 100000 );							// using a hack wait method
+		
+		if ( strlen(str) ) {
+			file_len += strlen( str );
+			//file_contents += str;
+			file_contents = ( char* )realloc( file_contents, file_len );
+			strncpy( file_contents, str, strlen(str) );
+			memset( str, 0, sizeof(str) );
+		}
+	} while ( (readpipe = read( readMe[0], str, sizeof(str) )) );
+	
 	int status;
 	int k = waitpid( objdump, &status, 0 );			
 	
@@ -272,30 +307,48 @@ int execObjDump( int argc, char* argv[] ) {			// these arguments are the exact s
     return 1;
   }
   
-  if ( WIFEXITED(status) && WEXITSTATUS(status) == 1 ) 
+  if (WIFEXITED(status) && WEXITSTATUS(status) == 1) 
     return 1;
 
+	if ( close(readMe[0]) ) {
+  	cerr << "\n\t\e[1mCould not close file descriptor for objdump pipe\e[0m\n\n";
+		return 1;
+  }	
+
 	//				*** PARSING PART ***		
+
+	if ( !strlen(file_contents) ) {
+		cerr << "\n\t\e[1mObject dump file is empty\e[0m\n\n";
+		return 1;
+	}
 	
-	// get the object dump file
-	if ( getObjDump(file_name) ) 
-		return 1;					// only return if we failed
+	// puts the object dump file in vector format
+	//getObjDump( file_contents );
 
+	size_t len;
+	char** objectDump = strsplit( file_contents, "\n", &len );
+
+	free( file_contents );
+	
 	// now the vector objectDump has all the lines
-	int len = objectDump.size();
-
-	if ( !len ) {
+	//int len = objectDump.size();
+	
+	int incre = 0;
+	
+	while ( incre < len && strstr(objectDump[incre++], "<main>:" ) == NULL );
+	
+	if ( incre == len ) {
 		cerr << "\n\t\e[1mMain was not found in the object dump\e[0m\n\n";
 		return 1;
 	}
 	
-	int incre = 2;
+	incre++;
 	int idx = 0;
 	vector< int > indices;
 	vector< int > linenumber;
 	string fileloc;
 		
-	while ( incre < len ) {
+	while ( 1 ) {
 		if ( objectDump[incre][0] == ' ' ) {
 			mainFunct.push_back( objectDump[incre] );
 			++idx;
@@ -312,6 +365,9 @@ int execObjDump( int argc, char* argv[] ) {			// these arguments are the exact s
 					break;
 				}
 			}
+			
+			if ( numstart == linelen - 1 )
+				break;
 
 			int linenum = stoi( line.substr(numstart + 1) );
 			linenumber.push_back( linenum );
@@ -328,6 +384,10 @@ int execObjDump( int argc, char* argv[] ) {			// these arguments are the exact s
 		cerr << "\n\t\e[1mMake sure you compiled your program with the -g flag\e[0m\n\n";
 		return 1;
 	}
+	
+	for ( int i = 0; i < len; ++i )
+		free( objectDump[i] );
+	free( objectDump );
 	
 	// gets the file name
 	getFileName( fileloc );

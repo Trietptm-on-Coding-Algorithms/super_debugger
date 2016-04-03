@@ -1,15 +1,5 @@
-#include <bits/stdc++.h>
-#include <unistd.h>
-#include <sys/wait.h>
-
 using namespace std;
 
-/*
- *		Must have object file and normal file in the same location	
- *
- *		Should have a modern version of valgrind/linux installed
- *
- */ 
 
 struct errors {
   string errorMessage;
@@ -23,6 +13,8 @@ vector<errors> dividedErrors[9];
 vector<errors> totalErrors;
 vector<string> memory;
 
+
+string flags[] = {"-f", "--force"};
 
 string listOfErrors[] = {"Segfault", "Invalid Read", "Invalid Write", "Invalid Free", "Mismatched Free ~ Always use malloc with free and new with delete", "Source and Destination Overwrite Each Other", "Conditional Jump", "A System Call Parameter is Uninitialised", "Your Function is Uninitialized, Value Might Be Too Big or Negative"}; 
 
@@ -38,14 +30,18 @@ string listOfErrors[] = {"Segfault", "Invalid Read", "Invalid Write", "Invalid F
 8 - Argument fishy 						---		can handle right away
 */
 
+
 void printMem() {
   for (int i = 0; i < memory.size(); ++i)
     cout << memory[i] << "\n";
+  cout << "\n";
 }
+
 
 void printDes(tuple<string, string, int> t) { 
   cout << "    Function: " << get<0>(t) << "    File: " << get<1>(t) << "    Line#: " << get<2>(t) << "\n"; 
 }
+
 
 void printErrors(errors t) {
   cout << t.errorMessage << "\n";
@@ -54,7 +50,9 @@ void printErrors(errors t) {
   cout << "\n";
 }
 
+
 void printCategory() {
+	cout << "\n";
   for (int i = 0; i < 9; ++i) {
     if (dividedErrors[i].size()) {
       cout << "--------  " << listOfErrors[i] << "  -------- \n";
@@ -65,6 +63,7 @@ void printCategory() {
     }
   }
 }
+
 
 char **strsplit(char *str, const char *delim, size_t *numtokens) {
   size_t tokens_alloc = 1;
@@ -97,6 +96,34 @@ char **strsplit(char *str, const char *delim, size_t *numtokens) {
   return tokens;
 }
 
+
+vector< string > parseNewLine( char* str ) {
+	vector< string > ret;
+
+	char* parsed = strtok( str, "\n" );
+	while ( parsed != NULL ) {
+		ret.push_back( parsed );
+		parsed = strtok( NULL, "\n" );
+	}
+	
+	return ret;
+}
+
+
+/*
+// got online --- http://stackoverflow.com/questions/236129/split-a-string-in-c 
+vector<string>& split(string &str, char delim) {
+	vector<string> elems;
+  stringstream ss(str);
+  string item;
+  while (getline(ss, item, delim)) 
+    elems.push_back(item); 
+    
+  return elems; 
+}
+*/
+
+
 void parse(char* str) {
   vector<string> errorLines;
   string empty = "";
@@ -107,24 +134,32 @@ void parse(char* str) {
   int end = 0;
   int place;
 
-  size_t len;
-  char** parseMe = strsplit(str, "\n", &len);
+  vector<string> parseMe = parseNewLine( str );
 
+	int len = parseMe.size();
   string line;
+  int idx = 0;
+  
+  do {
+  	line = parseMe[idx];
+  	++idx;
+  } while ( line.find("== Memcheck, a memory error detector") == -1 );
+  
+  string begin = line.substr( 0, line.find("Memcheck") );
+  
   for (int i = 5; i < len; ++i) {
     line = parseMe[i];
-    line.erase(0, line.find(" ") + 1);
+    
+    if ( !line.find(begin) ) {
+		  line.erase(0, line.find(" ") + 1);
 
-    if (!line.find("HEAP SUMMARY")) 
-      place = end;
+		  if (!line.find("HEAP SUMMARY")) 
+		    place = end;
 
-    errorLines.push_back(line);
-    ++end;
+		  errorLines.push_back(line);
+		  ++end;
+    }
   }
-
-  for (int i = 0; i < len; ++i)
-    free(parseMe[i]);
-  free(parseMe);
 
   int i = 0;
   while (i != place) {
@@ -191,11 +226,12 @@ void parse(char* str) {
   // print stuff
 /*	
   for (int i = 0; i < totalErrors.size(); ++i) 
-  printErrors(totalErrors[i]);	
+  	printErrors(totalErrors[i]);	
 
   printMem();
 */	 
 }
+
 
 void examine() {
   for (int i = 0; i < totalErrors.size(); ++i) {
@@ -223,12 +259,16 @@ void examine() {
   //printCategory();
 }
 
+
 void handleNows() {
-  cout << "\n----------------------------------------------------------------------------------\n----------------------------------------------------------------------------------\n\n";
+  cout << "\n----------------------------------------------------------------------------------"
+  "\n----------------------------------------------------------------------------------\n\n";
 
-  cout << "\t\e[1m***\tFix these errors before continuing   ***\n\t***\tIf you want to force continue your program:   ***\n\t***\trerun with -f or --force flag eg ./debug -f ./yourProgram   ***\e[0m\n\n";
+  cout << "\t\e[1m***\tFix these errors before continuing   ***\n\t***\tIf you want to force continue"
+  " your program:   ***\n\t***\trerun with -f or --force flag eg ./debug -f ./yourProgram   ***\e[0m\n\n";
 
-  cout << "----------------------------------------------------------------------------------\n----------------------------------------------------------------------------------\n\n";
+  cout << "----------------------------------------------------------------------------------"
+  "\n----------------------------------------------------------------------------------\n\n";
 
   if (dividedErrors[5].size()) {
     for (int i = 0; i < dividedErrors[5].size(); ++i) {
@@ -291,6 +331,7 @@ void handleNows() {
   }
 }
 
+
 int execValgrind(int argc, char* argv[]) {
   int readMe[2];
 
@@ -308,7 +349,10 @@ int execValgrind(int argc, char* argv[]) {
 
   if (parent) {
     // no need to wait anymore -- piping output ???
-    close(readMe[1]);								// parent does not write
+    if (close(readMe[1])) {								// parent does not write
+			cerr << "\n\t\e[1mCould not close file descriptor for valgrind pipe\e[0m\n\n";
+			return 1;
+		}
 
     int status;
     int k = waitpid(parent, &status, 0);				// might need to check exit status
@@ -317,15 +361,23 @@ int execValgrind(int argc, char* argv[]) {
       cerr << "\n\t\e[1mChild process for valgrind failed\e[0m\n\n";
       return 1;
     }
+    
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 1) 
+    	return 1;
  
     char str[65536];
 
     int bytesread = read(readMe[0], str, sizeof(str));	
 
-    if (bytesread == -1)
+    if (bytesread == -1) {
+    	cerr << "\n\t\e[1mCould not read from valgrind pipe\e[0m\n\n";
       return 1;
+    }
 
-    close(readMe[0]);	
+    if (close(readMe[0])) {
+    	cerr << "\n\t\e[1mCould not close file descriptor for valgrind pipe\e[0m\n\n";
+			return 1;
+    }	
 
 		// check to see if valgrind returned bad input
 		string temp;
@@ -343,7 +395,9 @@ int execValgrind(int argc, char* argv[]) {
 				}
 			}
 			
-			cout << "\n\t\e[1m" << output << "\e[0m\n";
+			if (output.find("command") != -1)
+				cout << "\n\t\e[1m" << output << "    make sure to include ./ if running an executable\e[0m\n\n";
+			else cout << "\n\t\e[1m" << output << "\e[0m\n";
 			return 1;
 		}
 
@@ -367,14 +421,42 @@ int execValgrind(int argc, char* argv[]) {
 		  }		
   }
   else {
-    close(readMe[0]);							// child does not read
-    dup2(readMe[1], 2);						// redirect stderr	
+    if (close(readMe[0]))	{						// child does not read
+			cerr << "\n\t\e[1mCould not close file descriptor for valgrind pipe\e[0m\n\n";
+			exit(1);
+		}
 
     int m = 1;
-    if ((!strcmp(argv[1], "-f")) || (!strcmp(argv[1], "--force")))
+    if ((!strcmp(argv[1], "-f")) || (!strcmp(argv[1], "--force"))) {
       ++m;
+    }
+    else if (argv[1][0] == '-') {	
+    	cerr << "\n\t\e[1mInvalid flag (flags are -f or --force)\e[0m\n\n";					
+    	exit(1);
+  	}
+  	
+  	if (m >= argc ) {
+			cerr << "\n\t\e[1mNo executable detected\e[0m\n\n";
+			exit(1);
+		}
+		
+		while (m < argc ) {
+			if ( argv[m][0] == '-' )
+				++m;
+			else break;
+		}
+		
+		if (m >= argc ) {
+			cerr << "\n\t\e[1mNo executable detected\e[0m\n\n";
+			exit(1);
+		}
+  	
+  	if (dup2(readMe[1], 2) == -1) {						// redirect stderr	
+			cerr << "\n\t\e[1mCould not redirect stderr to our valgrind pipe\e[0m\n\n";
+			exit(1);
+		}
 
-    char* valgrind_args[argc + 1];
+    const char* valgrind_args[argc + 1];				// need to change this
     valgrind_args[0] = "valgrind";
 
     int j = 1;										// mad skillz handlez
@@ -383,13 +465,13 @@ int execValgrind(int argc, char* argv[]) {
       valgrind_args[j] = argv[i];
     valgrind_args[argc] = NULL;
 
-    int k = execvp(valgrind_args[0], valgrind_args);
+    int k = execvp(valgrind_args[0], (char* const*)valgrind_args);
 
 		close(readMe[1]);
 		
     if (k == -1) {
-    	cerr << "\n\t\e[1mExecution failed for valgrind --- Make sure you have the correct object\e[0m\n\n";
-      return 1;
+    	cerr << "\n\t\e[1mExecution failed for valgrind --- Make sure you have the correct executable\e[0m\n\n";
+      exit(1);
     } 
   }
   

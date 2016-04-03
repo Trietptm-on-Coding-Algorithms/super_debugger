@@ -1,3 +1,8 @@
+#include <bits/stdc++.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/wait.h>
+
 using namespace std;
 
 
@@ -15,6 +20,7 @@ string filename;
 // important
 vector< x86 > x86_code;
 
+#define MAX_SIZE 1 << 24
 
 // Got these online - http://stackoverflow.com/questions/216823/whats-the-best-way-to-trim-stdstring
 
@@ -74,25 +80,13 @@ void printData() {
 	}
 }
 
-
-
 int getObjDump( string file_name ) {
 	ifstream parseMe( file_name );				// got from online - cppreference
 	if ( parseMe.is_open() ) {
 		string line;
 
-		while ( getline(parseMe, line) ) {
-			if ( line.find("<main>:") != -1 ) {
-				objectDump.push_back( line );
-				break;
-			}
-		}
-		
-		while ( getline(parseMe, line) ) {
-			if ( !line.empty() )
-				objectDump.push_back( line );
-			else break;
-		}
+		while ( getline(parseMe, line) ) 
+			objectDump.push_back( line );
 
 		parseMe.close();
 	}
@@ -103,18 +97,6 @@ int getObjDump( string file_name ) {
 	
 	return 0;
 }
-
-
-/*
-void getObjDump( string& file_contents ) {			
-	// got online --- http://stackoverflow.com/questions/236129/split-a-string-in-c 
-	stringstream ss( file_contents );
-	string line;
-	while ( getline(ss, line) )
-		objectDump.push_back( line );
-}
-*/
-
 
 int getFileLines( string fileloc ) {
 	ifstream source( fileloc );	
@@ -134,25 +116,23 @@ int getFileLines( string fileloc ) {
 	return 0;
 }
 
-
 void getFileName( string fileloc ) {
 	int idx = 0;
-
+	
 	for ( int i = fileloc.length() - 1; i >= 0; --i ) {
 		if ( fileloc[i] == '/' ) {
 			idx = i;
 			break;
 		}
 	}
-
+	
 	filename = fileloc.substr( idx + 1 );
 }
-
 
 vector< string > parseStr( string code ) {
 	vector< string > parsedx86;
 	int k = 0;
-
+	
 	string addr = code.substr( 0, (k = code.find(':')) );
 	trim( addr );
 	parsedx86.push_back( addr );
@@ -183,8 +163,7 @@ vector< string > parseStr( string code ) {
 	return parsedx86;
 }
 
-
-void parseAssem( const vector< int >& indices, const vector< int >& linenumber ) {
+void parseAssem( vector< int > indices, vector< int > linenumber ) {
 	int i = 0;
 	
 	while ( i < indices.size() - 1 ) {
@@ -218,16 +197,18 @@ void parseAssem( const vector< int >& indices, const vector< int >& linenumber )
 	x86_code.push_back( temp );
 }
 
-
 int execObjDump( int argc, char* argv[] ) {			// these arguments are the exact same as argc and argv
 	int argNum = 1;
 	if ( !strcmp(argv[1], "-f") || !strcmp(argv[1], "--force") )
 		++argNum;
-
+/*	
 	string temp = argv[argNum];
 	temp = temp.substr( 2 ); 
 	temp += "_copy.asm";		
-	const char* file_name = &temp[0];				// convert to char array
+	const char* file_name = temp.c_str();				// convert to char array
+*/
+
+	
 
 	pid_t objdump = fork();
 	
@@ -236,7 +217,7 @@ int execObjDump( int argc, char* argv[] ) {			// these arguments are the exact s
     return 1;
   }
 
-	if ( !objdump ) {			
+	if ( !objdump ) {	
 		int fd = open( file_name, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR );
 		
 		if ( dup2(fd, 1) == -1 ) {   				// make stdout go to file
@@ -244,19 +225,19 @@ int execObjDump( int argc, char* argv[] ) {			// these arguments are the exact s
 			exit( 1 );
 		}
 		
-		if ( close(fd) ) {     					// fd no longer needed - the dup'ed handles are sufficient
+		if ( close(fd) ) {     			// fd no longer needed - the dup'ed handles are sufficient
 			cerr << "\n\t\e[1mCould not close file descriptor for objdump pipe\e[0m\n\n";
 			exit( 1 );
 		}
-		
-		const char* objdump_args[5];
+
+		char* objdump_args[5];
 		objdump_args[0] = "objdump";
 		objdump_args[1]	= "-d";
 		objdump_args[2]	= "-l";
 		objdump_args[3]	= argv[argNum];
 		objdump_args[4] = NULL; 
 
-		int k = execvp( objdump_args[0], (char* const*)objdump_args );
+		int k = execvp( objdump_args[0], objdump_args );
 
 		if ( k == -1 ) {
 			cerr << "\n\t\e[1mExecution for object dump failed\e[0m\n\n";
@@ -265,14 +246,14 @@ int execObjDump( int argc, char* argv[] ) {			// these arguments are the exact s
 	}
 
 	int status;
-	int k = waitpid( objdump, &status, 0 );			
+	int k = waitpid( objdump, &status, 0 );				// might need to check exit status
 	
 	if ( k == -1 ) {
     cerr << "\n\t\e[1mChild process for object dump failed\e[0m\n\n";
     return 1;
   }
   
-  if ( WIFEXITED(status) && WEXITSTATUS(status) == 1 ) 
+  if (WIFEXITED(status) && WEXITSTATUS(status) == 1) 
     return 1;
 
 	//				*** PARSING PART ***		
@@ -283,19 +264,18 @@ int execObjDump( int argc, char* argv[] ) {			// these arguments are the exact s
 
 	// now the vector objectDump has all the lines
 	int len = objectDump.size();
-
-	if ( !len ) {
-		cerr << "\n\t\e[1mMain was not found in the object dump\e[0m\n\n";
-		return 1;
-	}
 	
-	int incre = 2;
+	int incre = 0;
+	
+	while ( objectDump[incre++].find( "<main>:" ) == -1 );
+	
+	incre++;
 	int idx = 0;
 	vector< int > indices;
 	vector< int > linenumber;
 	string fileloc;
 		
-	while ( incre < len ) {
+	while ( !objectDump[incre].empty() ) {
 		if ( objectDump[incre][0] == ' ' ) {
 			mainFunct.push_back( objectDump[incre] );
 			++idx;
@@ -324,11 +304,6 @@ int execObjDump( int argc, char* argv[] ) {			// these arguments are the exact s
 		++incre;
 	}
 	
-	if ( fileloc.empty() ) {
-		cerr << "\n\t\e[1mMake sure you compiled your program with the -g flag\e[0m\n\n";
-		return 1;
-	}
-	
 	// gets the file name
 	getFileName( fileloc );
 	
@@ -340,7 +315,7 @@ int execObjDump( int argc, char* argv[] ) {			// these arguments are the exact s
 	parseAssem( indices, linenumber );
 	
 	// print parsed data
-	//printData();
+	printData();
 	
 	return 0;
 }

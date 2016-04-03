@@ -1,19 +1,15 @@
+#include <bits/stdc++.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+
 #include "parseValgrind.cpp"
 #include "parseObjDump.cpp"
 
 using namespace std;
 
 /*
- *		
- *
- *
- *
- *
- */
-
-
-/*
- *		Must have object file and normal file in the same location	
+ *		Needs to compile with -g flag
  *
  *		Should have a modern version of valgrind/linux installed
  *
@@ -74,23 +70,22 @@ vector< x86 > x86_code;
 */
 
 int main( int argc, char* argv[] ) {
+	if ( argc < 2 ) {
+		cerr << "\n\t\e[1mFormat is: ./super_debugger [-f / --force] ./your_program\e[0m\n\n";
+		return 0;
+	} 
+
 	// execute and parse valgrind output	
 	int k = execValgrind( argc, argv ); 			
 	
-	if ( k ) {							
-		if ( k == 1 )
-			cerr << "\e[1mSomething bad happened --- Debugger did not run\e[0m\n";
+	if ( k ) 							
 		return 0;		// return early if not forced or if something bad happened
-	}
 
 	// execute and parse object dump of program
 	k = execObjDump( argc, argv );
 	
-	if ( k ) {							
-		if ( k == 1 )
-			cerr << "\e[1mSomething bad happened --- Debugger did not run\e[0m\n";
+	if ( k ) 							
 		return 0;		
-	}
 	
 	// run our debugger
 	

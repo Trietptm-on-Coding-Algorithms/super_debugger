@@ -55,8 +55,8 @@ pair< long, void* > set_brkpt( pid_t pid, void* addr ) {
 	// inject INT 3 = 0xCC --- this is an interrupt, sends signal to debugger
 	long new_data = get_data( pid, addr );
 	long former_data = new_data;
-	new_data = (new_data & ~0xFF) | 0xCC;
-	set_data( pid, addr, ( void* )new_data );
+	new_data = ( new_data & ~0xFF ) | 0xCC;
+	set_data( pid, addr, (void*)new_data );
 	
 	// need to store the former instruction pointer and data
 	pair< long, void* > p;
@@ -90,21 +90,21 @@ int main( int argc, char* argv[] ) {
 		pair< long, void* > brkpt_info;
 		
 		// vector to store all info about breakpoints
-		vector< pair< long, void* > > all_brkpts;
+		vector< pair<long, void*> > all_brkpts;
 		
 		// for our vector
 		int brkpt_pos = 0;
 		
 		// need array of breakpoint addresses --- might not be in order
-		void* addr = ( void* )0x00000000004006c4;				// fix to be main
-		void* sec_addr = ( void* )0x000000000040072c;			// before malloc
+		void* addr = (void*)0x00000000004006c4;				// fix to be main
+		void* sec_addr = (void*)0x000000000040072c;			// before malloc
 		
 		waitpid( parent, &status, 0 );
 		orig_rax = ptrace( PTRACE_PEEKUSER, parent, 8 * ORIG_RAX, NULL );
 		
 		// will send SIGTRAP at first execvp
-		if ( WIFSTOPPED( status ) ) {
-			if ( WSTOPSIG( status ) == SIGTRAP ) {				// before execve
+		if ( WIFSTOPPED(status) ) {
+			if ( WSTOPSIG(status) == SIGTRAP ) {				// before execve
 				cout << "Child stopped on SIGTRAP - continuing...\n";
 				cout << "The child made a system call " << orig_rax << " (execve)\n";
 				
@@ -136,7 +136,7 @@ int main( int argc, char* argv[] ) {
 					brkpt_info = all_brkpts[brkpt_pos++];
 					
 					// restore data to get rid of INT 3 and restore instr pointer
-					handle_brkpt( parent, brkpt_info.second, ( void* )brkpt_info.first );	
+					handle_brkpt( parent, brkpt_info.second, (void*)brkpt_info.first );	
 					
 					cout << "In breakpoint after reset data: " << get_instr_ptr( parent ) << "\n";
 					
@@ -146,12 +146,12 @@ int main( int argc, char* argv[] ) {
 				ptrace( PTRACE_CONT, parent, NULL, NULL );
 		  }  
 		}
-		while ( !WIFEXITED( status ) );
+		while ( !WIFEXITED(status) );
 		
 		cout << "Child exited - debugger terminating...\n";
 	}
 	else {
-		if ( ptrace( PTRACE_TRACEME, 0, NULL, NULL ) ) {
+		if ( ptrace(PTRACE_TRACEME, 0, NULL, NULL) ) {
 			cerr << "Cannot trace child process for main debugger\n";
 			exit( 1337 );
 		}

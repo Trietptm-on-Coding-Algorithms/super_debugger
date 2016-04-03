@@ -16,6 +16,8 @@ string filename;
 vector< x86 > x86_code;
 
 
+#define MAX_SIZE 1 << 20							// 1 MB is max size of pipe output
+
 // Got these online - http://stackoverflow.com/questions/216823/whats-the-best-way-to-trim-stdstring
 
 // trim from start (in place)
@@ -75,24 +77,14 @@ void printData() {
 }
 
 
-
+/*
 int getObjDump( string file_name ) {
 	ifstream parseMe( file_name );				// got from online - cppreference
 	if ( parseMe.is_open() ) {
 		string line;
 
-		while ( getline(parseMe, line) ) {
-			if ( line.find("<main>:") != -1 ) {
-				objectDump.push_back( line );
-				break;
-			}
-		}
-		
-		while ( getline(parseMe, line) ) {
-			if ( !line.empty() )
-				objectDump.push_back( line );
-			else break;
-		}
+		while ( getline(parseMe, line) ) 
+			objectDump.push_back( line );
 
 		parseMe.close();
 	}
@@ -103,15 +95,31 @@ int getObjDump( string file_name ) {
 	
 	return 0;
 }
+*/
 
 
-/*
+
 void getObjDump( string& file_contents ) {			
 	// got online --- http://stackoverflow.com/questions/236129/split-a-string-in-c 
 	stringstream ss( file_contents );
 	string line;
 	while ( getline(ss, line) )
 		objectDump.push_back( line );
+}
+
+
+
+/*
+vector< string > parseNewLine( char* str ) {
+	vector< string > ret;
+
+	char* parsed = strtok( str, "\n" );
+	while ( parsed != NULL ) {
+		ret.push_back( parsed );
+		parsed = strtok( NULL, "\n" );
+	}
+	
+	return ret;
 }
 */
 
@@ -223,11 +231,20 @@ int execObjDump( int argc, char* argv[] ) {			// these arguments are the exact s
 	int argNum = 1;
 	if ( !strcmp(argv[1], "-f") || !strcmp(argv[1], "--force") )
 		++argNum;
-
+/*
 	string temp = argv[argNum];
 	temp = temp.substr( 2 ); 
 	temp += "_copy.asm";		
-	const char* file_name = &temp[0];				// convert to char array
+	const char* file_name = temp.c_str();				// convert to char array
+	cout << file_name << "\n";
+*/
+
+	int readMe[2];
+
+  if ( pipe(readMe) == -1 ) {
+    cerr << "\n\t\e[1mCreational of pipe for valgrind failed\e[0m\n\n";
+    return 1;	
+  }
 
 	pid_t objdump = fork();
 	
@@ -237,18 +254,23 @@ int execObjDump( int argc, char* argv[] ) {			// these arguments are the exact s
   }
 
 	if ( !objdump ) {			
-		int fd = open( file_name, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR );
-		
-		if ( dup2(fd, 1) == -1 ) {   				// make stdout go to file
+		if ( close(readMe[0]) )	{						// child does not read
+			cerr << "\n\t\e[1mCould not close file descriptor for objdump pipe\e[0m\n\n";
+			exit(1);
+		}
+	
+		if ( dup2(readMe[1], 1) == -1 ) {   				// make stdout go to file
 			cerr << "\n\t\e[1mCould not redirect stdout to our file for objdump pipe\e[0m\n\n";
 			exit( 1 );
 		}
 		
-		if ( close(fd) ) {     					// fd no longer needed - the dup'ed handles are sufficient
+		/*
+		if ( close(fd) ) {     			// fd no longer needed - the dup'ed handles are sufficient
 			cerr << "\n\t\e[1mCould not close file descriptor for objdump pipe\e[0m\n\n";
 			exit( 1 );
 		}
-		
+		*/
+
 		const char* objdump_args[5];
 		objdump_args[0] = "objdump";
 		objdump_args[1]	= "-d";
@@ -264,6 +286,32 @@ int execObjDump( int argc, char* argv[] ) {			// these arguments are the exact s
 		}
 	}
 
+	if ( close(readMe[1]) ) {								// parent does not write
+		cerr << "\n\t\e[1mCould not close file descriptor for objdump pipe\e[0m\n\n";
+		return 1;
+	}
+	
+	char str[65536];
+	string file_contents;
+	
+	int readpipe = 0;
+	int file_len = 0;
+	
+	do {
+		if ( readpipe == -1 ) {
+			cerr << "\n\t\e[1mCould not read from object dump pipe\e[0m\n\n";
+      return 1;
+		}
+	
+		usleep( 100000 );							// using a hack wait method
+		
+		if ( strlen(str) ) {
+			file_len += strlen( str );
+			file_contents += str;
+			memset( str, 0, sizeof(str) );
+		}
+	} while ( (readpipe = read( readMe[0], str, sizeof(str) )) );
+	
 	int status;
 	int k = waitpid( objdump, &status, 0 );			
 	
@@ -275,27 +323,50 @@ int execObjDump( int argc, char* argv[] ) {			// these arguments are the exact s
   if ( WIFEXITED(status) && WEXITSTATUS(status) == 1 ) 
     return 1;
 
+	if ( close(readMe[0]) ) {
+  	cerr << "\n\t\e[1mCould not close file descriptor for objdump pipe\e[0m\n\n";
+		return 1;
+  }	
+
 	//				*** PARSING PART ***		
 	
+/*	
 	// get the object dump file
 	if ( getObjDump(file_name) ) 
 		return 1;					// only return if we failed
+*/
+
+	if ( file_contents.empty() ) {
+		cerr << "\n\t\e[1mObject dump file is empty\e[0m\n\n";
+		return 1;
+	}
+	
+	// puts the object dump file in vector format
+	getObjDump( file_contents );
 
 	// now the vector objectDump has all the lines
 	int len = objectDump.size();
+	
+	// puts the object dump file in vector format
+	//vector< string > objectDump = parseNewLine( file_contents );
 
-	if ( !len ) {
+	int incre = 0;
+	
+	// might not need this
+	while ( incre < len && objectDump[incre++].find("<main>:") == -1 );
+	
+	if ( incre == len ) {
 		cerr << "\n\t\e[1mMain was not found in the object dump\e[0m\n\n";
 		return 1;
 	}
 	
-	int incre = 2;
+	incre++;
 	int idx = 0;
 	vector< int > indices;
 	vector< int > linenumber;
 	string fileloc;
 		
-	while ( incre < len ) {
+	while ( !objectDump[incre].empty() && incre < len ) {
 		if ( objectDump[incre][0] == ' ' ) {
 			mainFunct.push_back( objectDump[incre] );
 			++idx;
@@ -305,14 +376,14 @@ int execObjDump( int argc, char* argv[] ) {			// these arguments are the exact s
 			string line = objectDump[incre];
 			int linelen = line.length();
 			int numstart = 0;
-			
+
 			for ( int i = linelen - 1; i; --i ) {
 				if ( line[i] == ':' ) {
 					numstart = i;
 					break;
 				}
 			}
-
+			
 			int linenum = stoi( line.substr(numstart + 1) );
 			linenumber.push_back( linenum );
 			indices.push_back( idx );
