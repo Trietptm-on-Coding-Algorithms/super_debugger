@@ -13,6 +13,8 @@
 
 using namespace std;
 
+
+
 // struct for registers
 struct user_regs_struct regs;
 
@@ -156,7 +158,7 @@ int main( int argc, char* argv[] ) {
 			exit( 1337 );
 		}
 		
-		int k = execvp( argv[1], &argv[1] );
+		int k = execvp( argv[1], argv+1 );
 		
 		if ( k == -1 )
 			cerr << "Execution failed for main debugger\n";
