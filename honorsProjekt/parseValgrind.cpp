@@ -1,5 +1,11 @@
+#include <iostream>
+#include <unistd.h>
+#include <vector>
+       #include <sys/types.h>
+       #include <sys/wait.h>
 using namespace std;
 
+using std::string;
 
 struct errors {
   string errorMessage;

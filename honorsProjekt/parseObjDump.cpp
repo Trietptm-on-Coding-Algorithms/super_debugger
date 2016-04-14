@@ -1,5 +1,19 @@
 using namespace std;
-
+#include <vector>
+#include <string>
+#include <iostream>
+#include <fstream>
+#include <unistd.h>
+#include <sys/types.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <sys/ptrace.h>
+#include <assert.h>
+#include <sys/user.h>
+#include <sys/reg.h>
+#include <errno.h>
+#include <algorithm>
 
 struct x86 {
   string line;
@@ -152,7 +166,7 @@ void getFileName( string fileloc ) {
 vector< string > parseStr( string code ) {
 	vector< string > parsedx86;
 	int k = 0;
-
+	cout << code;
 	string addr = code.substr( 0, (k = code.find(':')) );
 	trim( addr );
 	parsedx86.push_back( addr );
@@ -192,16 +206,37 @@ void parseAssem( const vector< int >& indices, const vector< int >& linenumber )
 		int k = indices[i];
 		int e = indices[i + 1];
 		
-		temp.line = trimmed( sourceFile[linenumber[i] - 1] );
 		temp.lineNum = linenumber[i];
-		
+		char* stuff = strdup(trimmed( sourceFile[linenumber[i] - 1] ).c_str());
+		while(*stuff && *stuff != ' ') stuff++;
+		while(*stuff && *stuff == ' ') stuff++;
+		char* beg = stuff;
+		while(*stuff && (*stuff != ' ' && *stuff != '=')) stuff++;
+		if(*stuff)
+			*stuff = '\0';
+		temp.line = string(beg);
+		int is_variable = 0;
 		while ( k < e ) {
-			temp.assembly.push_back( parseStr(mainFunct[k]) );
+			vector<string> parsed = parseStr(mainFunct[k]);
+			char* x86_cpy = strdup(parsed[2].c_str());
+			char* first = strtok(x86_cpy, ",");
+			char* rest = strtok(NULL, ",");
+			if(rest && strstr(rest, "rbp") != NULL){
+				printf("%s\n", rest);
+				char* a = strchr(rest,'(');
+				if(a)
+					*a = '\0';
+				parsed[2] = string(rest);
+				temp.assembly.push_back(parsed);
+				is_variable = 1;
+			}
+			free(x86_cpy);
 			++k;
 		}
 		
 		++i;
-		x86_code.push_back( temp );
+		if(is_variable)
+			x86_code.push_back( temp );
 	}
 	
 	x86 temp;	
@@ -243,7 +278,6 @@ int execObjDump( int argc, char* argv[] ) {			// these arguments are the exact s
 			cerr << "\n\t\e[1mCould not redirect stdout to our file for objdump pipe\e[0m\n\n";
 			exit( 1 );
 		}
-		
 		if ( close(fd) ) {     					// fd no longer needed - the dup'ed handles are sufficient
 			cerr << "\n\t\e[1mCould not close file descriptor for objdump pipe\e[0m\n\n";
 			exit( 1 );
@@ -294,7 +328,7 @@ int execObjDump( int argc, char* argv[] ) {			// these arguments are the exact s
 	vector< int > indices;
 	vector< int > linenumber;
 	string fileloc;
-		
+
 	while ( incre < len ) {
 		if ( objectDump[incre][0] == ' ' ) {
 			mainFunct.push_back( objectDump[incre] );
@@ -340,7 +374,7 @@ int execObjDump( int argc, char* argv[] ) {			// these arguments are the exact s
 	parseAssem( indices, linenumber );
 	
 	// print parsed data
-	//printData();
+	printData();
 	
 	return 0;
 }
