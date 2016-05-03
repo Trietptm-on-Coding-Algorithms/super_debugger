@@ -27,8 +27,11 @@ struct x86 {
 };
 
 struct funct_data {
-	int line;
-	void* base_ptr_addr;
+	int start_line;
+	int end_line;
+	bool symbol_filled;					// bool to check if we filled the symbol table already
+	void* base_ptr_addr;				// store the base pointer so we can subtract it at the end --- deleting symbol table?
+	void* get_base_addr;				// uses this to break
 	vector< x86 > x86_code;
 	map< string, symbol_data > symbol_table;		// symbol, symbol data
 };
@@ -47,7 +50,22 @@ string filename;
 map< string, funct_data > all_functs;			// name of function, function data
 
 // list of accepted types
-static vector< string > accept_types[14];
+static vector< string > accept_types[14] = {
+	{"unsigned int "},
+	{"unsigned long long int ", "unsigned long long "},
+	{"unsigned long int ", "unsigned long "},
+	{"signed long long int ", "long long int ", "signed long long ", "long long "},
+	{"signed int ", "int "},
+	{"signed long int ", "signed long ", "long int ", "long "},
+	{"long double "},
+	{"double "},
+	{"float "},
+	{"unsigned short int ", "unsigned short "},
+	{"signed short int ", "signed short ", "short int ", "short "},
+	{"char "},
+	{"char* "},
+	{"string "}	
+};
 
 static int sizeof_types[] = { sizeof(unsigned int), sizeof(unsigned long long), 
 sizeof(unsigned long), sizeof(long long), sizeof(int), sizeof(long), sizeof(long double), 
@@ -223,7 +241,39 @@ void printMaps() {
  */
 bool is_funct_start( int line_num ) {
 	for ( auto it = all_functs.begin(); it != all_functs.end(); ++it ) {
-		if ( (it -> second).line == line_num )	
+		if ( (it -> second).start_line == line_num )	
+			return true;
+	}
+	
+	return false;
+}
+
+
+/**
+ *	Get the function which this line number is corresponding to
+ *
+ * 	@param line_num: The line number
+ * 	@return The function the line number is in
+ */
+string get_function( int line_num ) {
+	for ( auto it = all_functs.begin(); it != all_functs.end(); ++it ) {		
+		if ( line_num >= (it -> second).start_line && line_num <= (it -> second).end_line )
+			return it -> first;
+	}
+	
+	return "-invalid-";					// should never reach
+}
+
+
+/**
+ *	Checks if we are at the end of a line number
+ *
+ * 	@param line_num: The line number
+ * 	@return True if we are at the end of a function
+ */
+bool end_of_function( int line_num ) {
+	for ( auto it = all_functs.begin(); it != all_functs.end(); ++it ) {		
+		if ( line_num == (it -> second).end_line )
 			return true;
 	}
 	
@@ -447,10 +497,17 @@ void parse_funct_map( map< string, vector<string> > &functions ) {
 		// get last addr of initialization of the function (to get the base pointer addr)
 		x86 first = (info.x86_code)[0];
 		vector< individ_x86 > get_last = first.assembly;
-		info.base_ptr_addr = get_last[ get_last.size() - 1 ].addr;
+		info.get_base_addr = get_last[ get_last.size() - 1 ].addr;
 		
 		// get line number the function starts at
-		info.line = first.line;
+		info.start_line = first.line;
+		
+		// get last line number
+		x86 last = (info.x86_code)[ (info.x86_code).size() - 1];
+		info.end_line = last.line;
+		
+		// we haven't filled the symbol table yet
+		info.symbol_filled = false;
 		
 		assert( (all_functs.find(it -> first) == all_functs.end()) && "Duplicate function names" );
 		all_functs[ it -> first ] = info;				// add to function map
@@ -474,12 +531,12 @@ void fill_funct_map( vector<string> &objdump, vector<string> &functions, vector<
 	int i = 0;
 	int idx;
 	map< string, vector<string> > all_funct_asm;
-	while ( i < len && !functions.empty() ) {
+	while ( i < len ) {
 		idx = -1;
 		for ( int j = 0; j < functions.size(); ++j ) {
 			if ( objdump[i].find( "<" + functions[j] + ">:" ) != -1 ) {
 				idx = j;
-				functions.erase( functions.begin() + j );
+				//functions.erase( functions.begin() + j );
 				break;
 			}
 		}
@@ -493,6 +550,7 @@ void fill_funct_map( vector<string> &objdump, vector<string> &functions, vector<
 				++i;
 			}
 			
+			// assert that this is the first instance of this function
 			assert( (all_funct_asm.find(demangled[idx]) == all_funct_asm.end()) && "Duplicate function names" );
 			all_funct_asm[ demangled[idx] ] = funct_asm;
 		}
@@ -737,7 +795,7 @@ vector<string> get_complete_objdump( char* program ) {
  */
 void execObjDump( int argc, char* argv[] ) {
 	// fills the global accept_types array	
-	fillTypeArr();
+	//fillTypeArr();
 		
 	// decoded line object dump
 	get_decoded_line( argv[1] );
@@ -762,8 +820,8 @@ void execObjDump( int argc, char* argv[] ) {
 	for ( auto it = all_functs.begin(); it != all_functs.end(); ++it ) {
 		cout << it -> first << "\n";
 		funct_data info = it -> second;
-		cout << info.base_ptr_addr << "\n";
-		printData( info.x86_code );
+		cout << info.get_base_addr << "\n";
+		//printData( info.x86_code );
 		printSymbols( info.symbol_table );
 		cout << "\n";
 	}

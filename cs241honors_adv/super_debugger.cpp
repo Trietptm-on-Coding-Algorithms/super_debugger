@@ -1,10 +1,13 @@
 //#include <bits/stdc++.h>
 
+// 'ssh gxie2@sp16-cs241-105.cs.illinois.edu'
+
 #include <map>
 #include <set>
 #include <iostream>
 #include <algorithm>
 #include <vector>
+#include <stack>
 #include <iomanip>
 #include <fstream>
 #include <sstream>
@@ -38,6 +41,12 @@ using namespace std;
  *	Should have a modern version of valgrind/linux installed
  *
  *	Format is ./super_debugger ./yourProgram
+ *
+ *	Need variable declarations to be in one line
+ *		ie int sum = 0, NOT int sum, a, b ...
+ *
+ *	Might block in the first run - just crtl + c and try again
+ *
  */ 
 
 

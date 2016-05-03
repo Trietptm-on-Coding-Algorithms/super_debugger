@@ -30,14 +30,14 @@ struct watchpt_info {
 };
 
 // map to store all info about watchpoints
-map< string, watchpt_info > all_watchpts;				// variable name, watchpoint info
+map< string, map<string, watchpt_info> > all_watchpts;				// function -> variable name, watchpoint info
 
-// used for inserting batches of watchpoints
+// used for inserting batches of watchpoints --- insert into curr_function
 set< string > watchpt_batch;
 
 // map to store index of watchpoint --- almost useless
-map< string, int > helper_watchpt;		// variable name, watchpoint number
-map< int, string > watchpt_idx;				// watchpoint number, variable name
+map< string, map<string, int> > helper_watchpt;		// function -> variable name, watchpoint number
+map< string, map<int, string> > watchpt_idx;				// function -> watchpoint number, variable name
 
 // the number of watchpoints
 int watchpt_num;
@@ -83,10 +83,11 @@ int watch_line;
 // used to check if we stepped or watchpointed
 bool step_flag;
 
+// --------------- GENERAL --------------------
 
-// temp stuff to show
-map< string, symbol_data > symbol_table; 
-vector< x86 > x86_code;
+// the current function we are at
+string curr_function;
+
 
 /**
  *	All valid input commands for our pTrace-debugger
@@ -108,6 +109,9 @@ static string rm_watch_cmds[] = {"clearw", "rmw", "dw"};
 
 static string info_brk_cmds[] = {"info", "i"};
 static string print_cmds[] = {"print", "p"};
+
+// forward declarations for now
+void switch_symbol_table( pid_t pid, int line_num );
 
 
 /**
@@ -170,7 +174,7 @@ void* get_ret_addr( pid_t pid, void* stack_pointer ) {
  *
  * 	@param pid: Process ID of the child (debuggee) 
  * 	@param addr: The address of the data we want to access
- * 	@return The data at the specified address (will be size of void*)
+ * 	@return The data at the specified address 
  */
 long get_data( pid_t pid, void* addr ) {
 	return ptrace( PTRACE_PEEKDATA, pid, addr, NULL );
@@ -238,7 +242,6 @@ void printRegisters( pid_t pid ) {
  *
  */
 void printIntro() {
-	//cerr << "\e[1m\n *** Welcome to sdb, copyright (c) 2016 Guiping Xie ***\n\n";
 	cerr << "\e[1m\n *** Welcome to sdb ***\n\n";
 	cerr << "Start / Run your program with 'r' or 'run'\n";
 	cerr << "Set breakpoints with 'break', 'br', or 'b' along with the line number or function\n";
@@ -252,6 +255,7 @@ void printIntro() {
 	cerr << "Stop debugging your program with 'kill', 'q', 'quit', or 'exit'\n";
 	cerr << "Print variable values with 'print' or 'p' along with the variable name\n";
 	cerr << "\tprint value may be garbage if variable is not currently in scope\n";
+	cerr << "Print values of common registers with 'reg', 'regs', or 'registers'\n";
 	cerr << "For more advanced features type 'help' to get the complete functionality of sdb\e[0m\n\n"; 
 }
 
@@ -306,13 +310,30 @@ void set_brkpt( pid_t pid, void* addr, bool is_new_brkpt ) {
  * 	@param symbol: The variable we want to watch 
  */
 void set_watchpt( pid_t pid , string symbol ) {
+	map< string, symbol_data >& symbol_table = all_functs[curr_function].symbol_table;
 	symbol_data sym = symbol_table[symbol];
+	
 	watchpt_info storage;
 	long data = get_data( pid, (void*)sym.addr );
 	storage.data = data;
 	storage.type = sym.type;
 	storage.times_hit = 0;
-	all_watchpts[symbol] = storage;
+	all_watchpts[curr_function][symbol] = storage;
+}
+
+
+/**
+ *	Checks if a watchpoint exist or not
+ *
+ * 	@return True if a watchpoint exists
+ */
+bool watchpt_exist() {
+	for ( auto it = all_watchpts.begin(); it != all_watchpts.end(); ++it ) {
+		if ( (it -> second).size() )
+			return true;
+	}
+	
+	return false;
 }
 
 
@@ -403,7 +424,7 @@ bool is_num( string &input ) {
 
 
 /**
- *	Checks whether the input is a valid function   ---   not implimenting functions now (placeholder)
+ *	Checks whether the input is a valid function  
  *
  * 	@param input: A string of characters to check whether it is a valid function
  * 	@return True if the input is a valid function
@@ -557,6 +578,11 @@ bool confirm_exit() {
  * 	@param direct_hit: If we asked for a correct line number
  */
 void insert_brkpt_helper( void* addr, int line_num, bool direct_hit ) {
+	if ( end_of_function(line_num) ) {
+		cerr << "Cannot set breakpoint at the end of a function, consider the line above\n"; 
+		return;
+	}
+	
 	++brkpt_num;
 	
 	// insert breakpoints into abstraction structures
@@ -580,7 +606,10 @@ void insert_brkpt_helper( void* addr, int line_num, bool direct_hit ) {
  */
 void find_print_brk_loc( string &str, bool is_line_num ) {
 	if ( is_line_num ) {
-		int line_num = stoi( str );
+		int line_num = 2147483647;
+		if ( str.length() <= 9 ) 
+			line_num = stoi( str );
+			
 		auto it = line_to_addr.begin();
 		
 		// if we can find the address of the line (it corresponds to a line number in the source file)
@@ -606,7 +635,7 @@ void find_print_brk_loc( string &str, bool is_line_num ) {
 	}
 	else {
 		// is function name
-		int line_num = all_functs[str].line;			// get the line number
+		int line_num = all_functs[str].start_line;			// get the line number
 		auto it = line_to_addr.begin();
 		
 		assert( ((it = line_to_addr.find(line_num)) != line_to_addr.end()) && "Something went wrong, debugger terminating" ); 
@@ -680,10 +709,12 @@ void find_print_rm_loc( pid_t pid, string &str, bool is_line_num ) {
 	int line_num = -1;
 	
 	if ( is_line_num ) {
-		line_num = stoi( str );
+		if ( str.length() <= 9 ) 
+			line_num = stoi( str );
+		else line_num = 2147483647;	
 	}
 	else {			// is function
-		line_num = all_functs[str].line;		
+		line_num = all_functs[str].start_line;		
 		auto it = line_to_addr.begin();
 		
 		assert( ((it = line_to_addr.find(line_num)) != line_to_addr.end()) && "Something went wrong, debugger terminating" ); 
@@ -739,22 +770,23 @@ void handle_brk_or_rm( pid_t pid, string input_cmd, bool in_break /* true: is se
 void handle_rm_watch(  pid_t pid, string input_cmd ) {
 	input_cmd.erase( 0, input_cmd.find(" ") + 1 );
 	trim( input_cmd );
+	map< string, symbol_data >& symbol_table = all_functs[curr_function].symbol_table;
 	
-	auto it = all_watchpts.begin();
+	auto it = all_watchpts[curr_function].begin();
 	auto batch_it = watchpt_batch.begin();
 	
-	if ( (it = all_watchpts.find(input_cmd)) != all_watchpts.end() ) {
-		all_watchpts.erase(it);
-		int idx = helper_watchpt[input_cmd];
-		helper_watchpt.erase( input_cmd );
-		watchpt_idx.erase( idx );
+	if ( (it = all_watchpts[curr_function].find(input_cmd)) != all_watchpts[curr_function].end() ) {
+		all_watchpts[curr_function].erase(it);
+		int idx = helper_watchpt[curr_function][input_cmd];
+		helper_watchpt[curr_function].erase( input_cmd );
+		watchpt_idx[curr_function].erase( idx );
 		cerr << "Removing watchpoint " << idx << ": '" << input_cmd << "'\n";
 	}
 	else if ( (batch_it = watchpt_batch.find(input_cmd)) != watchpt_batch.end() ) {
 		watchpt_batch.erase(input_cmd);
-		int idx = helper_watchpt[input_cmd];
-		helper_watchpt.erase( input_cmd );
-		watchpt_idx.erase( idx );
+		int idx = helper_watchpt[curr_function][input_cmd];
+		helper_watchpt[curr_function].erase( input_cmd );
+		watchpt_idx[curr_function].erase( idx );
 		cerr << "Removing watchpoint " << idx << ": '" << input_cmd << "'\n";
 	}
 	else if ( symbol_table.find(input_cmd) != symbol_table.end() ) {					// check if valid variable name
@@ -778,8 +810,9 @@ void print_allpt_info() {
 		cerr << "  Number\tType\t\tAddress\t\tLocation\n";
 		
 		for ( auto it = brkpt_idx.begin(); it != brkpt_idx.end(); ++it ) {
-			cerr << "    " << it -> first << "\t     breakpoint\t\t" << it -> second << "\t" << filename;
-			cerr << ":" << addr_to_line[it -> second] << "\n";
+			int line_num = addr_to_line[ it -> second ];
+			cerr << "    " << it -> first << "\t     breakpoint\t\t" << it -> second << "\t" << get_function( line_num );
+			cerr << "() at " << filename << ":" << line_num << "\n";
 		}
 		
 		cerr << "\n";
@@ -789,9 +822,12 @@ void print_allpt_info() {
 		cerr << "No active watchpoints are set\n\n";
 	}
 	else {
-		cerr << "  Number\tType\t\tName\n";
-		for ( auto it = watchpt_idx.begin(); it != watchpt_idx.end(); ++it ) 
-			cerr << "    " << it -> first << "\t     watchpoint\t\t" << it -> second << "\n";
+		cerr << "  Number\tType\t\tName\t\tFunction\n";
+		for ( auto out_it = watchpt_idx.begin(); out_it != watchpt_idx.end(); ++out_it ) {
+			for ( auto it = watchpt_idx[out_it -> first].begin(); it != watchpt_idx[out_it -> first].end(); ++it ) 
+				cerr << "    " << it -> first << "\t     watchpoint\t\t" << it -> second << "\t\t" << out_it -> first << "()\n";
+		}
+		
 		cerr << "\n";	
 	}
 }
@@ -837,8 +873,12 @@ void brkpt_handler( pid_t pid, bool in_step ) {
 	if ( !in_step )
 		new_instr_addr = instr_addr - 1;
 
-	int line_num = addr_to_line[new_instr_addr];			
-	cerr << "\nBreakpoint " << helper_brkpt[new_instr_addr] << ", at " << filename << ":" << line_num << "\n";
+	int line_num = addr_to_line[new_instr_addr];	
+	
+	// check to see if we should switch out the symbol table
+	switch_symbol_table( pid, line_num );
+				
+	cerr << "\nBreakpoint " << helper_brkpt[new_instr_addr] << ", " << curr_function << "() at " << filename << ":" << line_num << "\n";
 	cerr << line_num << "\t\t\t" << sourceFile[line_num] << "\n";		
 
 	// need to handle breakpoint
@@ -852,30 +892,80 @@ void brkpt_handler( pid_t pid, bool in_step ) {
 
 
 /**
+ *	Subtract the base pointer from the symbol table to get back the offsets
+ * 
+ * 	@param pid: Process ID of the child (debuggee)
+ * 	@param function: The function corresponding to the symbol table  
+ */
+void delete_symbols( pid_t pid, string function ) {
+	void* base_ptr = all_functs[function].base_ptr_addr;
+	map< string, symbol_data >& symbol_table = all_functs[function].symbol_table;
+	
+	for ( auto it = symbol_table.begin(); it != symbol_table.end(); ++it ) 
+		(it -> second).addr -= (long)base_ptr;
+		
+	all_functs[function].symbol_filled = false;	
+}
+
+
+/**
  *	Fills the symbol table with our symbols (parsed from objdump)
  * 
+ * 	@param pid: Process ID of the child (debuggee)
+ * 	@param function: The function corresponding to the symbol table  
  */
-void fill_symbols( pid_t pid ) {
-	void* base_ptr = get_base_ptr( pid );
+void fill_symbols( pid_t pid, string function ) {
+	void* base_ptr = get_base_ptr( pid );	
+	all_functs[function].base_ptr_addr = base_ptr;
+	map< string, symbol_data >& symbol_table = all_functs[function].symbol_table;
 	
 	for ( auto it = symbol_table.begin(); it != symbol_table.end(); ++it ) 
 		(it -> second).addr += (long)base_ptr;
+		
+	all_functs[function].symbol_filled = true;	
 }
 
 
 /**
  *	Builds the symbol table - called after initial stop
  *
- * 	@param pid: Process ID of the child (debuggee) 
+ * 	@param pid: Process ID of the child (debuggee)
+ * 	@param function: The function corresponding to the symbol table 
  */
-void build_symbol_table( pid_t pid ) {
+void build_symbol_table( pid_t pid, string function ) {
 	// get and fill all the symbols from the base pointer
-	fill_symbols( pid );
+	fill_symbols( pid, function );
 	insert_watchpt_batch( pid );	
 	
-	if ( all_watchpts.size() )				// we have active watchpoints --- need to singlestep
+	if ( all_watchpts[curr_function].size() )				// we have active watchpoints --- need to singlestep
 		ptrace( PTRACE_SINGLESTEP, pid, NULL, NULL );
 	else ptrace( PTRACE_CONT, pid, NULL, NULL );
+}
+
+
+/**
+ *	Helper to switch out the current symbol table (if we do)
+ *
+ * 	@param pid: Process ID of the child (debuggee)
+ * 	@param line_num: The current line number we want to check
+ */
+void switch_symbol_table( pid_t pid, int line_num ) {
+	string function = get_function( line_num );
+	
+	assert( function.compare("-invalid-") && "Line number does not correspond to a function" );
+
+	// might have errors --- hacky fix below
+	// need to also check if it is not the beginning of a function since the base pointer haven't updated yet
+	if ( function.compare(curr_function) && !is_funct_start(line_num) ) {					// if not the same as current function		
+		// subtract the base pointer so we get the offsets again --- also need to move them
+		delete_symbols( pid, curr_function );
+	
+		curr_function = function;
+
+		// build the symbol table if it was not built already
+		if ( !all_functs[curr_function].symbol_filled ) 
+			fill_symbols( pid, curr_function );	
+	}
 }
 
 
@@ -885,9 +975,7 @@ void build_symbol_table( pid_t pid ) {
  * 	@param pid: Process ID of the child (debuggee) 
  */
 void set_brkpt_main( pid_t pid ) {
-	x86 at_main = x86_code[0];
-	individ_x86 last_line = at_main.assembly[ at_main.assembly.size() - 1 ];
-	set_brkpt( pid, last_line.addr, true );
+	set_brkpt( pid, all_functs["main"].get_base_addr, true );	
 }
 
 
@@ -1008,6 +1096,8 @@ void print_types( pid_t pid, long data, int type_idx ) {
  * 	@param symbol: The symbol that we want to print
  */
 void print_symbol( pid_t pid, string &symbol ) {
+	map< string, symbol_data >& symbol_table = all_functs[curr_function].symbol_table;
+	
 	auto it = symbol_table.begin();
 	if ( (it = symbol_table.find(symbol)) != symbol_table.end() ) {
 		symbol_data sym = it -> second;
@@ -1043,8 +1133,9 @@ void handle_print( pid_t pid, string input_cmd ) {
  */
 bool check_watchpts( pid_t pid ) {
 	int flag = true;
+	map< string, symbol_data >& symbol_table = all_functs[curr_function].symbol_table;
 
-	for ( auto it = all_watchpts.begin(); it != all_watchpts.end(); ++it ) {
+	for ( auto it = all_watchpts[curr_function].begin(); it != all_watchpts[curr_function].end(); ++it ) {
 		symbol_data sym = symbol_table[it -> first];
 		long data = get_data( pid, (void*)sym.addr );
 		int size = sizeof_types[sym.type];
@@ -1069,15 +1160,18 @@ bool check_watchpts( pid_t pid ) {
 		}
 		
 		if ( data != former_data ) {
+			if ( !watch_line ) 				// if watch_line is 0 --- we must have put breakpt on the variable
+				watch_line = addr_to_line[ former_brkpt.orig_addr ];
+			
 			flag = false;
-			cerr << "\nWatchpoint '" << it -> first << "', at " << filename << ":" << watch_line << "\n";
+			cerr << "\nWatchpoint '" << it -> first << "', " << curr_function << "() at " << filename << ":" << watch_line << "\n";
 			cerr << "Former value = ";
 			print_types( pid, former_data, sym.type );
 			cerr << "New value = ";
 			print_types( pid, data, sym.type );
 			(it -> second).data = data;					// set new data to former data
 			
-			if ( !(it -> second).times_hit )
+			if ( !(it -> second).times_hit )				// first time hit
 				cerr << "*** Initial (Former) value may have been garbage ***\n";
 			
 			cerr << "Value changed on line: " << watch_line << "\t" << sourceFile[watch_line] << "\n";						
@@ -1101,15 +1195,16 @@ bool check_watchpts( pid_t pid ) {
 void set_temp_watchpt( pid_t pid, string input_cmd ) {
 	input_cmd.erase( 0, input_cmd.find(" ") + 1 );
 	trim( input_cmd );
+	map< string, symbol_data >& symbol_table = all_functs[curr_function].symbol_table;
 	auto it = symbol_table.begin();
 	
 	if ( (it = symbol_table.find(input_cmd)) != symbol_table.end() ) {
 		if ( (it -> second).type < 12 ) {					// type of the symbol (cannot be char* or string)
-			if ( watchpt_batch.find(input_cmd) == watchpt_batch.end() && all_watchpts.find(input_cmd) == all_watchpts.end() ) {
+			if ( watchpt_batch.find(input_cmd) == watchpt_batch.end() && all_watchpts[curr_function].find(input_cmd) == all_watchpts[curr_function].end() ) {
 				++watchpt_num;
 				watchpt_batch.insert(input_cmd);					// need to remove from both if we are removing
-				watchpt_idx[watchpt_num] = input_cmd;
-				helper_watchpt[input_cmd] = watchpt_num;
+				watchpt_idx[curr_function][watchpt_num] = input_cmd;
+				helper_watchpt[curr_function][input_cmd] = watchpt_num;
 				cerr << "Watchpoint set at '" << input_cmd << "'\n";
 			}
 			else {
@@ -1147,6 +1242,8 @@ bool step_handler( pid_t pid ) {
 		return true;
 	}
 	
+	switch_symbol_table( pid, line_num );
+	
 	if ( check_watchpts(pid) )	 			
 		cerr << line_num << "\t\t\t" << sourceFile[line_num] << "\n";	
 	else cerr << "\nCurrent line: " << line_num << "\t\t" << sourceFile[line_num]	<< "\n";
@@ -1168,6 +1265,9 @@ bool step_watch( pid_t pid ) {
 		ptrace( PTRACE_SINGLESTEP, pid, NULL, NULL );
 		return true;
 	}
+	
+	int line_num = addr_to_line[ instr_addr ];
+	switch_symbol_table( pid, line_num );
 
 	return false;
 }
@@ -1185,8 +1285,8 @@ void prog_active( pid_t pid, bool is_init_stop ) {
 		cerr << "Program stopped\n";
 	}
 	else {
-		if ( all_watchpts.size() ) {				// continue through watchpoint		
-			if ( reset_brkpt ) {			
+		if ( watchpt_exist() ) {				// continue through watchpoint	
+			if ( reset_brkpt ) {		
 				set_brkpt( pid, former_brkpt.orig_addr, false );
 				reset_brkpt = false;	
 			}
@@ -1242,8 +1342,15 @@ void prog_active( pid_t pid, bool is_init_stop ) {
 					return;
 			}
 		}
+		
+		// used to determine which symbol table to use
+		void* instr_addr = get_instr_ptr( pid );
+		int line_num = addr_to_line[ instr_addr ];
+		
+		// check to see if we should switch out the symbol table
+		switch_symbol_table( pid, line_num );		
 	}
-	
+
 	cerr << "(sdb) ";
 	
 	// handle setting breakpoints and such here
@@ -1328,7 +1435,6 @@ void prog_active( pid_t pid, bool is_init_stop ) {
 			}
 		}
 		else {
-			//cerr << "Invalid command. Do not include leading / trailing spaces. Look at 'help' for more info\n";
 			cerr << "Invalid command. Look at 'help' for a list of valid commands and usage\n";
 		}
 		
@@ -1346,7 +1452,7 @@ void prog_active( pid_t pid, bool is_init_stop ) {
 		// insert watchpoints --- should not insert if it is at initial stop
 		insert_watchpt_batch( pid );
 	
-		if ( !all_watchpts.size() ) {
+		if ( !watchpt_exist() ) {
 			if ( cont_flag ) {
 				if ( reset_brkpt ) 
 					ptrace( PTRACE_SINGLESTEP, pid, NULL, NULL );
@@ -1371,19 +1477,13 @@ void prog_active( pid_t pid, bool is_init_stop ) {
  * 	@return Used for exit status checking
  */
 int main_debugger( int argc, char* argv[] ) {
-	symbol_table = all_functs["main"].symbol_table;				// fixed for now
-	x86_code = all_functs["main"].x86_code;
+	curr_function = "main";
 
 	pid_t parent = fork();
 
-	if ( parent == -1 ) {
-		cerr << "Forking for main debugger failed\n";			
-		exit( 420 );
-	}
+	assert( parent != -1 && "Forking for main debugger failed" );
 
 	if ( parent ) {
-		//watch_provided = false;
-		
 		int	status;
 		waitpid( parent, &status, 0 );
 
@@ -1416,10 +1516,12 @@ int main_debugger( int argc, char* argv[] ) {
 		// now base pointer is absolutely set so we construct symbol table
 		waitpid( parent, &status, 0 );
 		
+		assert( !curr_function.compare("main") && "Something went wrong, debugger terminating" );
+		
 		// breakpoint we put in to create the symbol table
 		if ( WIFSTOPPED(status) ) {
 			if ( WSTOPSIG(status) == SIGTRAP ) 		
-				build_symbol_table( parent );		
+				build_symbol_table( parent, curr_function );		
 		}
 
 		do {
@@ -1447,12 +1549,9 @@ int main_debugger( int argc, char* argv[] ) {
 			exit( 1337 );
 		}
 
-		// change so we can execute with -f flag   ---   getopt
 		int k = execvp( argv[1], &argv[1] );
 
-		if ( k == -1 )
-			cerr << "Execution failed for main debugger\n";
-		exit( 1337 );
+		assert( (k != -1) && "Execution failed for main debugger" );
 	}	
 
 	return 0;

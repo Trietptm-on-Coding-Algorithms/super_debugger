@@ -6,9 +6,32 @@ using namespace std;
 
 // objdump -l -d helloworld > helloworld_perm.asm
 
-int random_funct() {
+void mess_up() {
+	char* mess_this_up = "here to break the stack";
+	int a = 5;
+	int b = 0;
+	int c = 1;
+	
+	a *= ~b;
+}
+
+
+void call_me() {
+	int j = 0;
+	++j;
+	
+	mess_up();
+	
+	j <<= ++j;
+	j += 2;
+}
+
+
+void random_funct() {
 	int i = 0;
 	++i;
+	
+	call_me();
 	
 	int b = 5;
 	i <<= b;
@@ -48,6 +71,12 @@ int main() {
 	g += sum;
 	
 	s /= g;
+	
+	mess_up();
+	
+	random_funct();
+	
+	g *= sum;
 	
 	return 0;
 }
