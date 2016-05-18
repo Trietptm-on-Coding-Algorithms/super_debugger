@@ -1,0 +1,57 @@
+/**
+ * 	@file: allfunct.h
+ * 	@author: Guiping Xie 
+ *	@thanks: Bhuvan Venkatesh, CS241 Honors TAs for their assistance
+ *
+ * 	@description: UIUC - CS241 (System Programming) Honors Project 
+ *	@date: Spring 2016
+ *
+ */
+ 
+ 
+#ifndef ALLFUNCT_H 
+#define ALLFUNCT_H 
+
+
+#include "objdump.h"
+
+class FunctData;
+
+
+class AllFunct : public ObjDump {
+	private:
+		/* map of functions to data --- name of function, function data */
+		std::map< std::string, FunctData > all_functs;	
+	
+		/**
+		 *	Fills the 'all_functs' map with functions to function data
+		 *
+		 * 	@param functions: The map of valid functions and assembly code
+		 */
+		void parse_funct_map( std::map< std::string, std::vector<std::string> > &functions);	
+	
+	
+		/**
+		 *	Fill the symbol vector with all declared varaiables
+		 *
+		 * 	@param function: The function corresponding to the symbol table
+		 */
+		void fillSymbols( std::string function );
+		
+		
+		/**
+		 *	Parse the assembly code lines 
+		 *
+		 * 	@param code: The assembly code line (string) we want to parse
+		 * 	@return An individ_x86 object holding the parsed contents
+		 */
+		individ_x86 parseStr( std::string code );
+	
+	
+	public:
+		
+		AllFunct( std::map< std::string, std::vector<std::string> > &functions );
+		
+};
+
+#endif
